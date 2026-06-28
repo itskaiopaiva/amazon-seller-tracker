@@ -99,6 +99,12 @@ tbody td{padding:9px 14px;vertical-align:middle}
 .loja-btn{background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--dim);padding:5px 14px;font-size:11px;font-weight:600;cursor:pointer;transition:all .15s;white-space:nowrap}
 .loja-btn.active{background:var(--orange);border-color:var(--orange);color:#000}
 .loja-btn:not(.active):hover{border-color:var(--orange);color:var(--orange)}
+.loja-btn-cons{border-color:var(--teal);color:var(--teal)}
+.loja-btn-cons.active{background:var(--teal);border-color:var(--teal);color:#000}
+.loja-btn-cons:not(.active):hover{border-color:var(--teal);color:var(--teal)}
+.loja-tag{display:inline-block;font-size:9px;border-radius:4px;padding:1px 5px;margin-left:5px;vertical-align:middle;font-weight:700}
+.loja-tag.t-magini{background:rgba(255,153,0,.16);color:var(--orange)}
+.loja-tag.t-loja2{background:rgba(0,180,216,.16);color:#00b4d8}
 
 /* BOTTOM */
 .bottom{display:grid;grid-template-columns:1fr 1fr;gap:14px}
@@ -167,9 +173,9 @@ footer{text-align:center;padding:18px;font-size:11px;color:var(--dim);border-top
 
 <header class="hdr">
   <div class="hdr-brand">
-    <div class="hdr-logo">MI</div>
+    <div class="hdr-logo" id="hdr-logo">MI</div>
     <div>
-      <div class="hdr-title">MAGINI IMPORTS</div>
+      <div class="hdr-title" id="hdr-title">MAGINI IMPORTS</div>
       <div class="hdr-sub">Dashboard Amazon Seller · Brasil · Dropshipping Shopee</div>
     </div>
   </div>
@@ -177,6 +183,7 @@ footer{text-align:center;padding:18px;font-size:11px;color:var(--dim);border-top
     <div class="loja-switch">
       <button class="loja-btn active" data-loja="magini" onclick="trocarLoja('magini')">Magini Imports</button>
       <button class="loja-btn" data-loja="loja2" onclick="trocarLoja('loja2')">Bibi M Imports</button>
+      <button class="loja-btn loja-btn-cons" data-loja="consolidado" onclick="trocarLoja('consolidado')">📊 Consolidado</button>
     </div>
     <div class="pill">Produtos: <span id="h-total">--</span></div>
     <div class="pill">Atualizado: <span id="h-data">--</span></div>
@@ -817,13 +824,27 @@ function setFiltro(key, val, btn) {
   atualizarTudo();
 }
 
+// Monta dataset virtual somando as duas lojas (cada item marcado com _loja de origem)
+function dadosConsolidado() {
+  const lojas = ['magini', 'loja2'];
+  const produtos = lojas.flatMap(l => DADOS_LOJAS[l].produtos.map(p => ({ ...p, _loja: l })));
+  const followup = lojas.flatMap(l => DADOS_LOJAS[l].followup.map(f => ({ ...f, _loja: l })));
+  const ord = s => s.split('/').reverse().join('');
+  const ultima = lojas.map(l => DADOS_LOJAS[l].ultima).sort((a, b) => ord(b).localeCompare(ord(a)))[0];
+  return { nome: 'Consolidado · Magini + Bibi M', ultima, produtos, followup };
+}
+
 function trocarLoja(id) {
-  if (!DADOS_LOJAS[id]) return;
+  const data = id === 'consolidado' ? dadosConsolidado() : DADOS_LOJAS[id];
+  if (!data) return;
   LOJA_ATIVA         = id;
-  PRODUTOS           = DADOS_LOJAS[id].produtos;
-  ULTIMA_ATUALIZACAO = DADOS_LOJAS[id].ultima;
-  FOLLOWUP_PEDIDOS   = DADOS_LOJAS[id].followup;
+  PRODUTOS           = data.produtos;
+  ULTIMA_ATUALIZACAO = data.ultima;
+  FOLLOWUP_PEDIDOS   = data.followup;
   document.querySelectorAll('.loja-btn').forEach(b => b.classList.toggle('active', b.dataset.loja === id));
+  const logo = { magini: 'MI', loja2: 'BM', consolidado: 'Σ' }[id] || 'MI';
+  const elLogo = document.getElementById('hdr-logo'); if (elLogo) elLogo.textContent = logo;
+  const elTit  = document.getElementById('hdr-title'); if (elTit)  elTit.textContent  = data.nome.toUpperCase();
   popularCategorias();
   renderFollowUp();
   resetFiltros();
@@ -935,7 +956,7 @@ function renderTabela() {
       : '<span title="Custo do fornecedor não informado" style="font-size:10px;color:var(--dim)">⏳ —</span>';
     return `<tr>
     <td style="color:var(--dim);text-align:center">${i + 1}</td>
-    <td><div class="pnome" title="${p.produto}">${p.produto}${p.variacaoDe ? '<span class="var-tag" title="Variação de '+p.variacaoDe+'">var</span>' : ''}</div><div class="mono">${p.asin}</div></td>
+    <td><div class="pnome" title="${p.produto}">${p.produto}${p.variacaoDe ? '<span class="var-tag" title="Variação de '+p.variacaoDe+'">var</span>' : ''}${p._loja ? '<span class="loja-tag t-'+p._loja+'">'+(p._loja==='magini'?'Magini':'Bibi M')+'</span>' : ''}</div><div class="mono">${p.asin}</div></td>
     <td style="min-width:170px">${fluxoBadge(p)}</td>
     <td style="font-size:11px;color:var(--dim)">${p.categoria}</td>
     <td style="color:var(--orange)">${fornCell}</td>
@@ -1074,7 +1095,7 @@ const FP_CAMPOS = [
   { k: 'emailEnvio',        lbl: 'E-mail Envio' },
   { k: 'emailRecebimento',  lbl: 'E-mail Recebimento' }
 ];
-function fpKey(p, campo) { return `fp_${LOJA_ATIVA}_${p.pedido}_${campo}`; }
+function fpKey(p, campo) { return `fp_${p._loja || LOJA_ATIVA}_${p.pedido}_${campo}`; }
 function fpGet(p, campo) {
   const ls = localStorage.getItem(fpKey(p, campo));
   return ls === null ? !!p[campo] : ls === '1';
@@ -1115,7 +1136,7 @@ function renderFollowUp() {
       return `<tr>
         <td class="mono">${p.pedido}</td>
         <td>${p.data}</td>
-        <td>${p.produto}${p.qtd > 1 ? ` <span style="color:var(--dim)">×${p.qtd}</span>` : ''}</td>
+        <td>${p.produto}${p.qtd > 1 ? ` <span style="color:var(--dim)">×${p.qtd}</span>` : ''}${p._loja ? ' <span class="loja-tag t-'+p._loja+'">'+(p._loja==='magini'?'Magini':'Bibi M')+'</span>' : ''}</td>
         <td style="color:${lu != null ? (lu > 0 ? 'var(--green)' : 'var(--red)') : 'var(--dim)'};font-weight:600">${lu != null ? R$(lu) : '⏳ —'}</td>
         ${FP_CAMPOS.map(c => {
           const on = fpGet(p, c.k);
