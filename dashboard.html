@@ -293,11 +293,11 @@ footer{text-align:center;padding:18px;font-size:11px;color:var(--dim);border-top
   <!-- Charts Row 2: Vendas/dia + Sessões/dia + Categorias -->
   <div class="charts-row charts-r2">
     <div class="chart-card">
-      <h3>Vendas por Dia — Top 3 ▲ alta / ▼ baixa</h3>
+      <h3>Vendas por Dia — por Produto (todos com vendas)</h3>
       <div class="chart-wrap" style="height:260px"><canvas id="cVendasDia"></canvas></div>
     </div>
     <div class="chart-card">
-      <h3>Sessões por Dia — Top 3 ▲ alta / ▼ baixa</h3>
+      <h3>Sessões (total 30d) — por Produto (todos com tráfego)</h3>
       <div class="chart-wrap" style="height:260px"><canvas id="cSessoesDia"></canvas></div>
     </div>
     <div class="chart-card">
@@ -452,6 +452,28 @@ let FOLLOWUP_PEDIDOS  = DADOS_LOJAS.magini.followup;
 const FRETE_AMAZON = 13;    // R$ frete cobrado do cliente, embutido no preço
 const COM_PCT      = 0.15;  // 15% de comissão Amazon sobre (preço + frete)
 
+// ===== HISTÓRICO PARA OS GRÁFICOS DE LINHA (por ASIN) =====
+// Vendas: unidades por dia (real, lido da página de Pedidos). A cada atualização, acrescente os dias novos.
+const HIST_VENDAS = {
+  'B09X1MDDK1': {'21/06':1,'22/06':2,'23/06':2,'24/06':1,'25/06':1,'26/06':1,'27/06':1}, // Difusor (Magini)
+  'B0DYDTXYTD': {'27/06':1},                            // Pendente Aramado (Magini)
+  'B0H6FQ6GD5': {'25/06':1,'27/06':3}                  // Protetor de Banco (Bibi M)
+};
+// Sessões: snapshot do total (30d) em datas anteriores; o dia da última atualização é somado automaticamente do campo `sessoes`.
+const HIST_SESSOES_ANT = {
+  'B09X1MDDK1': {'26/06':712}, 'B099KGJ4NV': {'26/06':141}, 'B0C4ZY27P4': {'26/06':4}, 'B0DYDTXYTD': {'26/06':7},
+  'B0H6FQ6GD5': {'27/06':5}, 'B0H53CG3K8': {'27/06':6}, 'B0H533PC7X': {'27/06':4}, 'B0H6F7NTWK': {'27/06':2},
+  'B0H6FL5N5S': {'27/06':2}, 'B0H6F9PD83': {'27/06':2}, 'B0H6FSQFMQ': {'27/06':2}, 'B0H6GLY844': {'27/06':1},
+  'B0H6NBRG41': {'27/06':1}, 'B0H6KVTP56': {'27/06':1}
+};
+function serieVendas(p)  { return { ...(p.historicoVendas || {}), ...(HIST_VENDAS[p.asin] || {}) }; }
+function serieSessoes(p) {
+  const s = { ...(HIST_SESSOES_ANT[p.asin] || {}) };
+  const dcur = (ULTIMA_ATUALIZACAO || '').slice(0, 5);
+  if (p.sessoes > 0 && dcur) s[dcur] = p.sessoes;
+  return s;
+}
+
 // ---- HELPERS ----
 const R$ = v => 'R$' + Number(v).toFixed(2).replace('.', ',');
 const shortName = (s, n = 3) => s.split(' ').slice(0, n).join(' ');
@@ -560,7 +582,7 @@ function renderCharts() {
 
   const ORANGE = '#FF9900', BLUE = '#1f6feb', GREEN = '#3fb950', RED = '#f85149',
         PURPLE = '#a371f7', YELLOW = '#d29922', TEAL = '#39d353';
-  const CORES_LINHA = [GREEN, ORANGE, BLUE, PURPLE, YELLOW, TEAL, RED];
+  const CORES_LINHA = [GREEN, ORANGE, BLUE, PURPLE, YELLOW, TEAL, RED, '#00b4d8', '#e85d04', '#f72585', '#4cc9f0', '#90be6d', '#f9c74f', '#577590', '#b5179e', '#43aa8b'];
   const grid = 'rgba(48,54,61,0.8)';
 
   // Configurações reutilizáveis
@@ -650,23 +672,23 @@ function renderCharts() {
 
   // ── Chart 3: Vendas por Dia — linha por produto ──
   const datas = gerarDatas(periodoNDias());
-  const prodComVendas = topMovers(prods, 'historicoVendas');
+  const prodComVendas = prods.filter(p => Object.keys(serieVendas(p)).length > 0);
   charts.vd = new Chart(document.getElementById('cVendasDia'), {
     type: 'line',
     plugins: [ChartDataLabels],
     data: {
       labels: datas,
       datasets: prodComVendas.length ? prodComVendas.map((p, i) => {
-        const cor = corTrend(p, CORES_LINHA[i % CORES_LINHA.length]);
-        const seta = p._trend === 'alta' ? '▲ ' : p._trend === 'baixa' ? '▼ ' : '';
+        const cor = CORES_LINHA[i % CORES_LINHA.length];
+        const sv = serieVendas(p);
         return {
-          label: seta + shortName(p.produto, 3),
-          data: datas.map(d => (p.historicoVendas || {})[d] || 0),
+          label: shortName(p.produto, 3),
+          data: datas.map(d => sv[d] || 0),
           borderColor: cor,
           backgroundColor: cor + '22',
           pointBackgroundColor: cor,
           pointBorderColor: '#0d1117',
-          pointRadius: datas.map(d => ((p.historicoVendas || {})[d] || 0) > 0 ? 5 : 3),
+          pointRadius: datas.map(d => (sv[d] || 0) > 0 ? 5 : 2),
           borderWidth: 2, tension: 0.25, fill: false
         };
       }) : [{
@@ -690,23 +712,24 @@ function renderCharts() {
   });
 
   // ── Chart 4: Sessões por Dia — linha por produto ──
-  const prodComSessoes = topMovers(prods, 'historicoSessoes');
+  const prodComSessoes = prods.filter(p => Object.keys(serieSessoes(p)).length > 0);
   charts.sd = new Chart(document.getElementById('cSessoesDia'), {
     type: 'line',
     plugins: [ChartDataLabels],
     data: {
       labels: datas,
       datasets: prodComSessoes.length ? prodComSessoes.map((p, i) => {
-        const cor = corTrend(p, CORES_LINHA[i % CORES_LINHA.length]);
-        const seta = p._trend === 'alta' ? '▲ ' : p._trend === 'baixa' ? '▼ ' : '';
+        const cor = CORES_LINHA[i % CORES_LINHA.length];
+        const ss = serieSessoes(p);
         return {
-          label: seta + shortName(p.produto, 3),
-          data: datas.map(d => (p.historicoSessoes || {})[d] || 0),
+          label: shortName(p.produto, 3),
+          data: datas.map(d => (ss[d] != null ? ss[d] : null)),
+          spanGaps: true,
           borderColor: cor,
           backgroundColor: cor + '22',
           pointBackgroundColor: cor,
           pointBorderColor: '#0d1117',
-          pointRadius: datas.map(d => ((p.historicoSessoes || {})[d] || 0) > 0 ? 4 : 2),
+          pointRadius: datas.map(d => (ss[d] != null ? 4 : 0)),
           borderWidth: 2, tension: 0.35, fill: false
         };
       }) : [{
